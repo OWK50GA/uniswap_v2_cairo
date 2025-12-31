@@ -3,10 +3,11 @@ pub mod pair {
     pub mod pair;
 }
 
-pub mod lp_token {
-    pub mod ilp_token;
-    pub mod lp_token;
-}
+// WANTED TO CHANGE DESIGN, BUT MADE PAIR AN ERC20 IN THE END
+// pub mod lp_token {
+//     pub mod ilp_token;
+//     pub mod lp_token;
+// }
 
 pub mod factory {
     pub mod factory;
@@ -19,6 +20,6 @@ pub mod router {
 }
 
 pub mod library {
-    pub mod ilibrary;
+    // pub mod ilibrary;
     pub mod library;
 }

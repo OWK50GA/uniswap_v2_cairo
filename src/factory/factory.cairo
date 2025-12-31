@@ -1,13 +1,11 @@
 #[starknet::contract]
 pub mod factory {
     // use starknet::contract_address::ContractAddressZeroable;
-    use starknet::get_contract_address;
-use core::hash::{HashStateExTrait, HashStateTrait};
+    use core::hash::{HashStateExTrait, HashStateTrait};
     use core::num::traits::Zero;
     use core::poseidon::PoseidonTrait;
     use openzeppelin::token::erc20::interface::{
-        IERC20MetadataDispatcher,
-        IERC20MetadataDispatcherTrait,
+        IERC20MetadataDispatcher, IERC20MetadataDispatcherTrait,
     };
     use starknet::class_hash::ClassHash;
     use starknet::storage::{
@@ -15,7 +13,10 @@ use core::hash::{HashStateExTrait, HashStateTrait};
         Vec, VecTrait,
     };
     use starknet::syscalls::deploy_syscall;
-    use starknet::{ContractAddress, SyscallResultTrait, get_block_timestamp, get_caller_address};
+    use starknet::{
+        ContractAddress, SyscallResultTrait, get_block_timestamp, get_caller_address,
+        // get_contract_address,
+    };
     use uniswap_v2::factory::ifactory::IFactory;
     use crate::library::library::Library;
 
@@ -71,15 +72,15 @@ use core::hash::{HashStateExTrait, HashStateTrait};
         self.owner.write(owner);
     }
 
-    fn sort_tokens(
-        tokenA: ContractAddress, tokenB: ContractAddress,
-    ) -> (ContractAddress, ContractAddress) {
-        if (tokenA < tokenB) {
-            (tokenA, tokenB)
-        } else {
-            (tokenB, tokenA)
-        }
-    }
+    // fn sort_tokens(
+    //     tokenA: ContractAddress, tokenB: ContractAddress,
+    // ) -> (ContractAddress, ContractAddress) {
+    //     if (tokenA < tokenB) {
+    //         (tokenA, tokenB)
+    //     } else {
+    //         (tokenB, tokenA)
+    //     }
+    // }
 
     fn get_salt(tokenA: ContractAddress, tokenB: ContractAddress) -> felt252 {
         let salt = PoseidonTrait::new();
@@ -114,7 +115,7 @@ use core::hash::{HashStateExTrait, HashStateTrait};
             ref self: ContractState, tokenA: ContractAddress, tokenB: ContractAddress,
         ) -> ContractAddress {
             assert(tokenA != tokenB, 'Identical Address Pair Attempt');
-            let (token0, token1) = sort_tokens(tokenA, tokenB);
+            let (token0, token1) = Library::sort_tokens(tokenA, tokenB);
             assert(!token0.is_zero(), 'Zero Address Pair Attempt');
             assert(self.pair.entry((token0, token1)).read().is_zero(), 'Pair already exists');
 
@@ -141,7 +142,7 @@ use core::hash::{HashStateExTrait, HashStateTrait};
             );
             let (pair_address, _) = result.unwrap_syscall();
             self.pair.entry((token0, token1)).write(pair_address);
-            self.pair.entry((token1, token0)).write(pair_address);
+            // self.pair.entry((token1, token0)).write(pair_address);
             self.all_pairs.push(pair_address);
             self
                 .emit(
@@ -157,13 +158,16 @@ use core::hash::{HashStateExTrait, HashStateTrait};
             pair_address
         }
 
-        fn get_pair(self: @ContractState, tokenA: ContractAddress, tokenB: ContractAddress) -> ContractAddress {
-            let pair_contract = Library::pair_for(
-                get_contract_address(),
-                self.pair_class_hash.read(),
-                tokenA,
-                tokenB
-            );
+        fn get_pair(
+            self: @ContractState, tokenA: ContractAddress, tokenB: ContractAddress,
+        ) -> ContractAddress {
+            // let pair_contract = Library::pair_for(
+            //     get_contract_address(), self.pair_class_hash.read(), tokenA, tokenB,
+            // );
+            // assert(pair_contract.is_some(), 'NO SUCH PAIR CONTRACT');
+            // pair_contract.unwrap()
+            let (token_0, token_1) = Library::sort_tokens(tokenA, tokenB);
+            let pair_contract = self.pair.entry((token_0, token_1)).read();
             pair_contract
         }
 
