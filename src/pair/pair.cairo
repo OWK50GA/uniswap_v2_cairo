@@ -2,9 +2,9 @@
 pub mod Pair {
     use ERC20Component::{ERC20MixinImpl, InternalImpl};
     use core::num::traits::{Sqrt, Zero};
+    use openzeppelin::security::ReentrancyGuardComponent;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
-    use openzeppelin::security::ReentrancyGuardComponent;
     // use uniswap_v2::lp_token::ilp_token::{ILPTokenDispatcher, ILPTokenDispatcherTrait};
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::{ContractAddress, get_block_timestamp, get_caller_address, get_contract_address};
@@ -35,7 +35,9 @@ pub mod Pair {
     // * TODO: IMPLEMENT A REENTRANCY GUARD TO REPLACE THE LOCK MODIFIER * /
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
-    component!(path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent);
+    component!(
+        path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent,
+    );
 
     #[event]
     #[derive(Drop, starknet::Event)]

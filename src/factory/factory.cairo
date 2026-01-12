@@ -1,9 +1,9 @@
 #[starknet::contract]
-pub mod factory {
+pub mod Factory {
     // use starknet::contract_address::ContractAddressZeroable;
-    use core::hash::{HashStateExTrait, HashStateTrait};
+    // use core::hash::{HashStateExTrait, HashStateTrait};
     use core::num::traits::Zero;
-    use core::poseidon::PoseidonTrait;
+    // use core::poseidon::PoseidonTrait;
     use openzeppelin::token::erc20::interface::{
         IERC20MetadataDispatcher, IERC20MetadataDispatcherTrait,
     };
@@ -13,9 +13,7 @@ pub mod factory {
         Vec, VecTrait,
     };
     use starknet::syscalls::deploy_syscall;
-    use starknet::{
-        ContractAddress, SyscallResultTrait, get_block_timestamp, get_caller_address,
-        // get_contract_address,
+    use starknet::{ContractAddress, SyscallResultTrait, get_block_timestamp, get_caller_address// get_contract_address,
     };
     use uniswap_v2::factory::ifactory::IFactory;
     use crate::library::library::Library;
@@ -29,7 +27,7 @@ pub mod factory {
         >, // Maps the address of a pair contract to the tokens the pair holds, in any order
         all_pairs: Vec<ContractAddress>, // Vec of all pairs that exist
         pair_class_hash: ClassHash, // stores the class hash of the pair contract
-        lp_token_class_hash: ClassHash // class hash of the liquidity pool token
+        // lp_token_class_hash: ClassHash // class hash of the liquidity pool token -> The lptoken is the pair contract since it is an erc20
     }
 
     #[event]
@@ -68,41 +66,17 @@ pub mod factory {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress) {
+    fn constructor(
+        ref self: ContractState,
+        owner: ContractAddress,
+        fee_to: ContractAddress,
+        pair_class_hash: ClassHash,
+        // lp_token_class_hash: ClassHash,
+    ) {
         self.owner.write(owner);
-    }
-
-    // fn sort_tokens(
-    //     tokenA: ContractAddress, tokenB: ContractAddress,
-    // ) -> (ContractAddress, ContractAddress) {
-    //     if (tokenA < tokenB) {
-    //         (tokenA, tokenB)
-    //     } else {
-    //         (tokenB, tokenA)
-    //     }
-    // }
-
-    fn get_salt(tokenA: ContractAddress, tokenB: ContractAddress) -> felt252 {
-        let salt = PoseidonTrait::new();
-        let felt_salt: felt252 = salt.update_with(tokenA).update_with(tokenB).finalize();
-        felt_salt
-    }
-
-    fn get_lp_token_metadata(
-        tokenA: ContractAddress, tokenB: ContractAddress,
-    ) -> (ByteArray, ByteArray) {
-        let tokenA_dispatcher = IERC20MetadataDispatcher { contract_address: tokenA };
-        let tokenB_dispatcher = IERC20MetadataDispatcher { contract_address: tokenB };
-
-        let tokenA_name = tokenA_dispatcher.name();
-        let tokenA_symbol = tokenA_dispatcher.symbol();
-        let tokenB_name = tokenB_dispatcher.name();
-        let tokenB_symbol = tokenB_dispatcher.symbol();
-
-        let lp_token_name = tokenA_name + tokenB_name;
-        let lp_token_symbol = tokenA_symbol + tokenB_symbol;
-
-        (lp_token_name, lp_token_symbol)
+        self.fee_to.write(fee_to);
+        self.pair_class_hash.write(pair_class_hash);
+        // self.lp_token_class_hash.write(lp_token_class_hash);
     }
 
     #[abi(embed_v0)]
@@ -119,13 +93,29 @@ pub mod factory {
             assert(!token0.is_zero(), 'Zero Address Pair Attempt');
             assert(self.pair.entry((token0, token1)).read().is_zero(), 'Pair already exists');
 
-            let (token_name, token_symbol) = get_lp_token_metadata(token0, token1);
+            let token0_dispatcher = IERC20MetadataDispatcher { contract_address: token0 };
+            let token1_dispatcher = IERC20MetadataDispatcher { contract_address: token1 };
+            let (token_name, token_symbol) = {
+                let token0_name = token0_dispatcher.name();
+                let token0_symbol = token0_dispatcher.symbol();
+                let token1_name = token1_dispatcher.name();
+                let token1_symbol = token1_dispatcher.symbol();
+
+                let lp_token_name = token0_name + token1_name;
+                let lp_token_symbol = token0_symbol + token1_symbol;
+
+                (lp_token_name, lp_token_symbol)
+
+
+            };
+
+            // let (token_name, token_symbol) = Library::get_lp_token_metadata(token0, token1);
 
             // Deploy the LP TOken for this pair
             // let lp_token = self.deploy_lp_token(token0, token1);
 
             // Deploy the pair contract
-            let mut constructor_calldata: Array<felt252> = array![];
+            let mut constructor_calldata = ArrayTrait::new();
             // serialize the constructor params like so:
             // let param = x
             // param.serialize(ref constructor_calldata);
@@ -135,7 +125,7 @@ pub mod factory {
             token_symbol.serialize(ref constructor_calldata);
             // lp_token.serialize(ref constructor_calldata);
 
-            let felt_salt = get_salt(token0, token1);
+            let felt_salt = Library::get_salt(token0, token1);
             let pair_class_hash = self.pair_class_hash.read();
             let result = deploy_syscall(
                 pair_class_hash, felt_salt, constructor_calldata.span(), false,
@@ -181,7 +171,7 @@ pub mod factory {
         fn set_new_owner(ref self: ContractState, new_owner: ContractAddress) {
             let caller = get_caller_address();
             let prev_owner = self.owner.read();
-            assert!(caller == prev_owner, "only owner can transfer ownership");
+            assert(caller == prev_owner, 'Caller not owner');
             self.owner.write(new_owner);
             self
                 .emit(
@@ -201,29 +191,29 @@ pub mod factory {
         }
     }
 
-    #[generate_trait]
-    impl InternalImpl of InternalFunctions {
-        fn deploy_lp_token(
-            self: @ContractState, token0: ContractAddress, token1: ContractAddress,
-        ) -> ContractAddress {
-            let (token_name, token_symbol) = get_lp_token_metadata(token0, token1);
+    // #[generate_trait]
+    // impl InternalImpl of InternalFunctions {
+    //     fn deploy_lp_token(
+    //         self: @ContractState, token0: ContractAddress, token1: ContractAddress,
+    //     ) -> ContractAddress {
+    //         let (token_name, token_symbol) = Library::get_lp_token_metadata(token0, token1);
 
-            let mut constructor_calldata = array![];
-            token_name.serialize(ref constructor_calldata);
-            token_symbol.serialize(ref constructor_calldata);
+    //         let mut constructor_calldata = array![];
+    //         token_name.serialize(ref constructor_calldata);
+    //         token_symbol.serialize(ref constructor_calldata);
 
-            // Same salt is used to deploy the lp token and the pair contract
-            let felt_salt = get_salt(token0, token1);
+    //         // Same salt is used to deploy the lp token and the pair contract
+    //         let felt_salt = Library::get_salt(token0, token1);
 
-            let lp_token_class_hash = self.lp_token_class_hash.read();
+    //         // let lp_token_class_hash = self.lp_token_class_hash.read();
 
-            let result = deploy_syscall(
-                lp_token_class_hash, felt_salt, constructor_calldata.span(), false,
-            );
+    //         // let result = deploy_syscall(
+    //         //     lp_token_class_hash, felt_salt, constructor_calldata.span(), false,
+    //         // );
 
-            let (address, _) = result.unwrap_syscall();
+    //         let (address, _) = result.unwrap_syscall();
 
-            address
-        }
-    }
+    //         address
+    //     }
+    // }
 }

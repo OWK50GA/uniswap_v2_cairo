@@ -1,39 +1,42 @@
 pub mod Library {
     use core::hash::{HashStateExTrait, HashStateTrait};
     use core::num::traits::Zero;
-    use core::pedersen::{PedersenTrait, pedersen};
+    use core::pedersen::{pedersen};
     use core::poseidon::PoseidonTrait;
     use openzeppelin::token::erc20::interface::{
         IERC20MetadataDispatcher, IERC20MetadataDispatcherTrait,
     };
     use starknet::{ClassHash, ContractAddress};
-    use crate::pair::ipair::{IPairDispatcher, IPairDispatcherTrait};
     use crate::factory::ifactory::{IFactoryDispatcher, IFactoryDispatcherTrait};
+    use crate::pair::ipair::{IPairDispatcher, IPairDispatcherTrait};
 
-    fn get_salt(tokenA: ContractAddress, tokenB: ContractAddress) -> felt252 {
+    pub fn get_salt(tokenA: ContractAddress, tokenB: ContractAddress) -> felt252 {
+        assert(tokenA != tokenB, 'Identical Tokens');
+        let (token0, token1) = sort_tokens(tokenA, tokenB);
         let salt = PoseidonTrait::new();
-        let felt_salt: felt252 = salt.update_with(tokenA).update_with(tokenB).finalize();
+        let felt_salt: felt252 = salt.update_with(token0).update_with(token1).finalize();
         felt_salt
     }
 
-    fn get_lp_token_metadata(
+    pub fn get_lp_token_metadata(
         tokenA: ContractAddress, tokenB: ContractAddress,
     ) -> (ByteArray, ByteArray) {
-        let tokenA_dispatcher = IERC20MetadataDispatcher { contract_address: tokenA };
-        let tokenB_dispatcher = IERC20MetadataDispatcher { contract_address: tokenB };
+        let (token0, token1) = sort_tokens(tokenA, tokenB);
+        let token0_dispatcher = IERC20MetadataDispatcher { contract_address: token0 };
+        let token1_dispatcher = IERC20MetadataDispatcher { contract_address: token1 };
 
-        let tokenA_name = tokenA_dispatcher.name();
-        let tokenA_symbol = tokenA_dispatcher.symbol();
-        let tokenB_name = tokenB_dispatcher.name();
-        let tokenB_symbol = tokenB_dispatcher.symbol();
+        let token0_name = token0_dispatcher.name();
+        let token0_symbol = token0_dispatcher.symbol();
+        let token1_name = token1_dispatcher.name();
+        let token1_symbol = token1_dispatcher.symbol();
 
-        let lp_token_name = tokenA_name + tokenB_name;
-        let lp_token_symbol = tokenA_symbol + tokenB_symbol;
+        let lp_token_name = token0_name + token1_name;
+        let lp_token_symbol = token0_symbol + token1_symbol;
 
         (lp_token_name, lp_token_symbol)
     }
 
-    fn compute_hash_on_elements(data: Span<felt252>) -> felt252 {
+    pub fn compute_hash_on_elements(data: Span<felt252>) -> felt252 {
         let mut acc: felt252 = 0;
         let mut i = 0;
 
@@ -81,27 +84,31 @@ pub mod Library {
 
         let constructor_calldata_hash = compute_hash_on_elements(constructor_calldata.span());
         let deploy_salt = get_salt(token0, token1);
-        let deployer_address = factory.into();
+        let deployer_address: felt252 = factory.into();
         // let pair_class_hash = self.pair_class_hash.read().into();
 
-        let state = PedersenTrait::new(0)
-            .update_with('STARKNET_CONTRACT_ADDRESS')
-            .update(deployer_address)
-            .update(deploy_salt)
-            .update(pair_class_hash.into())
-            .update(constructor_calldata_hash)
-            .finalize();
-
-        state.try_into()
+        let mut addr_elements = ArrayTrait::new();
+        'STARKNET_CONTRACT_ADDRESS'.serialize(ref addr_elements);
+        deployer_address.serialize(ref addr_elements);
+        deploy_salt.serialize(ref addr_elements);
+        pair_class_hash.serialize(ref addr_elements);
+        constructor_calldata_hash.serialize(ref addr_elements);
+        // let state = PedersenTrait::new(0)
+        //     .update('STARKNET_CONTRACT_ADDRESS')
+        //     .update(deployer_address)
+        //     .update(deploy_salt)
+        //     .update(pair_class_hash.into())
+        //     .update(constructor_calldata_hash)
+        //     .finalize();
+        let elements_hash = compute_hash_on_elements(addr_elements.span());
+        elements_hash.try_into()
     }
 
     // fetches and sorts the reserves for a pair
     pub fn get_reserves(
         // self: @ComponentState<TContractState>,
-        factory: ContractAddress,
-        // pair_class_hash: ClassHash,
-        token_a: ContractAddress,
-        token_b: ContractAddress,
+        factory: ContractAddress, // pair_class_hash: ClassHash,
+        token_a: ContractAddress, token_b: ContractAddress,
     ) -> (u256, u256) { // reserve_a, reserve_b
         let (token_0, token_1) = sort_tokens(token_a, token_b);
         // let pair_contract = pair_for(factory, pair_class_hash, token_0, token_1);
@@ -162,9 +169,7 @@ pub mod Library {
     }
 
     pub fn get_amounts_out(
-        factory: ContractAddress,
-        amount_in: u256,
-        path: Array<ContractAddress>,
+        factory: ContractAddress, amount_in: u256, path: Array<ContractAddress>,
         // pair_class_hash: ClassHash,
     ) -> Array<u256> {
         assert(path.len() >= 2, 'INVALID PATH');
@@ -173,10 +178,8 @@ pub mod Library {
         amounts.append(amount_in);
         for i in 0..path.len() {
             let (reserve_in, reserve_out) = get_reserves(
-                factory,
-                // pair_class_hash,
-                *path.get(i).unwrap().unbox(),
-                *path.get(i).unwrap().unbox(),
+                factory, // pair_class_hash,
+                *path.get(i).unwrap().unbox(), *path.get(i).unwrap().unbox(),
             );
             amounts
                 .append(get_amount_out(*amounts.get(i).unwrap().unbox(), reserve_in, reserve_out));
@@ -187,10 +190,8 @@ pub mod Library {
 
     pub fn get_amounts_in(
         // self: @ComponentState<TContractState>,
-        factory: ContractAddress,
-        // pair_class_hash: ClassHash,
-        amount_out: u256,
-        path: Array<ContractAddress>,
+        factory: ContractAddress, // pair_class_hash: ClassHash,
+        amount_out: u256, path: Array<ContractAddress>,
     ) -> Array<u256> {
         let path_length = path.len();
         assert(path.len() >= 2, 'INVALID PATH');
@@ -212,10 +213,8 @@ pub mod Library {
             let idx_out = path_length - i - 1;
 
             let (reserve_in, reserve_out) = get_reserves(
-                factory,
-                // pair_class_hash,
-                *path.get(idx_in).unwrap().unbox(),
-                *path.get(idx_out).unwrap().unbox(),
+                factory, // pair_class_hash,
+                *path.get(idx_in).unwrap().unbox(), *path.get(idx_out).unwrap().unbox(),
             );
             let amount_current = *amounts.at(i);
             let amount_prev = get_amount_in(amount_current, reserve_in, reserve_out);

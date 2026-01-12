@@ -20,6 +20,9 @@ pub mod router {
 }
 
 pub mod library {
-    // pub mod ilibrary;
+    pub mod ilibrary;
     pub mod library;
+    pub mod library_contract;
 }
+
+pub mod mock_erc20;

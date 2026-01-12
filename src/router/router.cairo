@@ -1,13 +1,13 @@
 #[starknet::contract]
 pub mod Router {
+    use core::num::traits::Zero;
+    use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
+    use starknet::{ClassHash, ContractAddress, get_block_timestamp, get_caller_address};
+    use crate::factory::ifactory::{IFactoryDispatcher, IFactoryDispatcherTrait};
+    use crate::library::library::Library;
     use crate::pair::ipair::{IPairDispatcher, IPairDispatcherTrait};
     use crate::router::irouter::IRouter;
-    use core::num::traits::Zero;
-    use crate::library::library::Library;
-    use crate::factory::ifactory::{IFactoryDispatcher, IFactoryDispatcherTrait};
-    use starknet::storage::{StoragePointerWriteAccess, StoragePointerReadAccess};
-    use starknet::{ContractAddress, get_block_timestamp, ClassHash, get_caller_address};
-    use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     #[storage]
     pub struct Storage {
@@ -72,7 +72,12 @@ pub mod Router {
             (amount_a, amount_b)
         }
 
-        fn _swap(ref self: ContractState, amounts: Span<u256>, path: Span<ContractAddress>, to: ContractAddress) {
+        fn _swap(
+            ref self: ContractState,
+            amounts: Span<u256>,
+            path: Span<ContractAddress>,
+            to: ContractAddress,
+        ) {
             let factory = self.factory.read();
             let pair_class_hash = self.pair_class_hash.read();
 
@@ -80,10 +85,21 @@ pub mod Router {
                 let (input, output) = (*path.at(i), *path.at(i + 1));
                 let (token_0, _) = Library::sort_tokens(input, output);
                 let amount_out = *amounts.at(i + 1);
-                let (amount_0_out, amount_1_out) = if input == token_0 { (0, amount_out) } else { (amount_out, 0) };
+                let (amount_0_out, amount_1_out) = if input == token_0 {
+                    (0, amount_out)
+                } else {
+                    (amount_out, 0)
+                };
 
-                let _to = if i < path.len() - 2 { Library::pair_for(factory, pair_class_hash, output, *path.at(i + 2)).unwrap() } else { to };
-                let pair_dispatcher = IPairDispatcher { contract_address: Library::pair_for(factory, pair_class_hash, input, output).unwrap() };
+                let _to = if i < path.len() - 2 {
+                    Library::pair_for(factory, pair_class_hash, output, *path.at(i + 2)).unwrap()
+                } else {
+                    to
+                };
+                let pair_dispatcher = IPairDispatcher {
+                    contract_address: Library::pair_for(factory, pair_class_hash, input, output)
+                        .unwrap(),
+                };
                 pair_dispatcher.swap(amount_0_out, amount_1_out, _to);
             }
         }
@@ -106,16 +122,26 @@ pub mod Router {
             let (token_0, token_1) = Library::sort_tokens(token_a, token_b);
             let factory = self.factory.read();
             let caller = get_caller_address();
-            let (amount_0, amount_1) = self._add_liquidity(token_0, token_1, amount_a_desired, amount_b_desired, amount_a_min, amount_b_min);
+            let (amount_0, amount_1) = self
+                ._add_liquidity(
+                    token_0,
+                    token_1,
+                    amount_a_desired,
+                    amount_b_desired,
+                    amount_a_min,
+                    amount_b_min,
+                );
 
-            let pair = Library::pair_for(factory, self.pair_class_hash.read(), token_0, token_1).unwrap();
+            let pair = Library::pair_for(factory, self.pair_class_hash.read(), token_0, token_1)
+                .unwrap();
 
             let (token_0_dispatcher, token_1_dispatcher) = (
-                IERC20Dispatcher { contract_address: token_0 }, IERC20Dispatcher { contract_address: token_1 }
+                IERC20Dispatcher { contract_address: token_0 },
+                IERC20Dispatcher { contract_address: token_1 },
             );
             token_0_dispatcher.transfer_from(caller, pair, amount_0);
             token_1_dispatcher.transfer_from(caller, pair, amount_1);
-            
+
             let pair_dispatcher = IPairDispatcher { contract_address: pair };
             let liquidity = pair_dispatcher.mint(to);
 
@@ -145,7 +171,11 @@ pub mod Router {
             let pair_dispatcher = IPairDispatcher { contract_address: pair };
 
             let (amount_0, amount_1) = pair_dispatcher.burn(to);
-            let (mut amount_a, amount_b) = if token_a == token_0 { (amount_0, amount_1)} else { (amount_1, amount_0) };
+            let (mut amount_a, amount_b) = if token_a == token_0 {
+                (amount_0, amount_1)
+            } else {
+                (amount_1, amount_0)
+            };
             assert(amount_a >= amount_a_min, 'INSUFFICIENT A AMOUNT');
             assert(amount_b >= amount_b_min, 'INSUFFICIENT B AMOUNT');
             (amount_a, amount_b)
@@ -167,7 +197,12 @@ pub mod Router {
 
             assert(amounts.at(amounts.len() - 1) > @amount_out_min, 'INSUFFICIENT OUTPUT AMOUNT');
             let token_dispatcher = IERC20Dispatcher { contract_address: *path.at(0) };
-            token_dispatcher.transfer_from(caller, Library::pair_for(factory, pair_class_hash, *path.at(0), *path.at(1)).unwrap(), *amounts.at(0));
+            token_dispatcher
+                .transfer_from(
+                    caller,
+                    Library::pair_for(factory, pair_class_hash, *path.at(0), *path.at(1)).unwrap(),
+                    *amounts.at(0),
+                );
             self._swap(amounts.span(), path.span(), to);
             amounts
         }
@@ -181,21 +216,24 @@ pub mod Router {
             deadline: u64,
         ) -> Array<u256> {
             let (factory, pair_class_hash, caller) = (
-                self.factory.read(), self.pair_class_hash.read(), get_caller_address()
+                self.factory.read(), self.pair_class_hash.read(), get_caller_address(),
             );
             let amounts = Library::get_amounts_in(factory, amount_out, path.clone());
             assert(amounts.at(0) < @amount_in_max, 'EXCESSIVE INPUT AMOUNT');
-            
+
             let token_dispatcher = IERC20Dispatcher { contract_address: *path.at(0) };
-            token_dispatcher.transfer_from(caller, Library::pair_for(factory, pair_class_hash, *path.at(0), *path.at(1)).unwrap(), *amounts.at(0));
+            token_dispatcher
+                .transfer_from(
+                    caller,
+                    Library::pair_for(factory, pair_class_hash, *path.at(0), *path.at(1)).unwrap(),
+                    *amounts.at(0),
+                );
             self._swap(amounts.span(), path.span(), to);
             amounts
         }
 
 
-        fn quote(
-            self: @ContractState, amount_a: u256, reserve_a: u256, reserve_b: u256,
-        ) -> u256 {
+        fn quote(self: @ContractState, amount_a: u256, reserve_a: u256, reserve_b: u256) -> u256 {
             Library::quote(amount_a, reserve_a, reserve_b)
         } // amount_b
         fn get_amount_out(
