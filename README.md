@@ -1,6 +1,6 @@
-# uniswap_v2 (Cairo / StarkNet)
+# uniswap_v2 (Cairo / Starknet)
 
-🔧 **A Uniswap v2 style AMM implementation in Cairo for StarkNet**
+🔧 **A Uniswap v2 style AMM implementation in Cairo for Starknet**
 
 This repository is an educational/experimental implementation of the Uniswap v2 design in Cairo. It contains the core contracts and utilities necessary to create and manage liquidity pools, perform swaps, and calculate amounts and paths — adapted to StarkNet / Cairo primitives.
 
